@@ -1,5 +1,5 @@
 ---
-title: "Demonstrating Quarto for GitHub READMEs"
+title: "University of Notre Dame WBB Travel Stress Metric"
 format: gfm
 execute: 
   warning: false
@@ -8,178 +8,239 @@ execute:
 jupyter: python3
 ---
 
-## Section Header
+## Executive Summary
 
-You'll want to make use of sections and subsections to organize your document. Think of the sections as broad categories, and subsections as more specific topics within those categories. I can make bigger statements at this level.
+This project develops a **Travel Stress Score (TSS)** to quantify the logistical and competitive demands associated with Notre Dame Women’s Basketball travel schedules and to evaluate how those demands relate to on-court performance.
 
-### Subsection Header
+We constructed:
+- **Unweighted TSS (baseline):** a transparent index that aggregates standardized travel and scheduling stressors plus interaction effects.
+- **Weighted TSS\* (data-derived):** a tuned index where both primary factors and interaction terms are **weighted using historical outcomes** (scoring margin) via regression.
 
-Subsections are useful for breaking ideas down and adding details. This is also likely where you'll want to add code blocks. 
+The resulting scores provide a practical tool for benchmarking travel demand and supporting evidence-based scheduling and recovery planning.
 
-It will be worth noting some chunk options that you might find useful.
+## Key Takeaways
 
-If I want to hide code but show output, I can use `echo: false`.
+- Travel stress is **multidimensional** (travel time, rest, opponent strength, time zones, home/away context, back-to-backs).
+- Interaction effects capture **compounding stress** (e.g., long travel * time-zone shift).
+- Data-derived weighting (TSS\*) improves alignment with observed performance variability vs. equal-weight baselines.
+- The framework is modular and extensible to other teams, seasons, and outcomes.
+
+## Methodology
+
+### Problem framing
+
+We aim to quantify “how demanding” each game’s context is using public travel and schedule information, then evaluate whether higher stress aligns with differences in performance (e.g., scoring margin).
+
+### Index design principles
+
+1. **Directional consistency:** Each component is oriented so higher values represent higher stress.
+2. **Comparability:** Continuous inputs are standardized (z-scores) to avoid unit-driven dominance.
+3. **Baseline + tuning:** We start with an equal-weight baseline (unweighted TSS), then learn weights from historical outcomes to produce a tuned score (TSS\*).
+4. **Compounding effects:** Interaction terms capture situations where combined stressors matter more than either factor alone.
+
+### Inputs used
+
+Primary stress drivers:
+- `travel_minutes`
+- `Opponent Rank` → transformed so stronger opponents (lower rank) increase stress
+- `days_since_last_game` → used only when ≤ 50 days (exclude off-season gaps)
+- `road_score`
+- `timezone_change`
+- `back_to_back` (1 if games are on sequential days)
+
+### Score definitions
+
+**Unweighted baseline TSS**  
+\[
+\text{TSS}_{unweighted} = \sum(\text{standardized primary factors}) + \sum(\text{standardized interactions})
+\]
+
+**Weighted TSS\***  
+Weights are learned from a regression using scoring margin as the outcome. Primary and interaction weights are derived from **absolute standardized coefficients** and normalized to sum to 1:
+\[
+\text{TSS}^* = \sum(w_j\,Z(x_j)) + \sum(w_{ab}\,Z(x_a\,x_b))
+\]
+
+## 1. Load Libraries and Data
+
+We loaded the tooling needed for data preparation, standardization, interaction generation, and regression modeling, then read the final cleaned dataset.
 
 ```{python}
-#| echo: false
-2 + 2
-```
+# !pip install openpyxl scipy statsmodels --quiet
 
-If I want to hide output but show code, I can use `results: 'hide'`.
-
-```{python}
-#| results: 'hide'
-2 + 2
-```
-
-Maybe I want to show the code, but not run it. I can use `eval: false`.
-
-```{python}
-#| eval: false
-2 + 2
-```
-
-In most of your chunks, you'll probably want to turn off messages and warnings. You might notice, though, that I did that globally in the execute key in the header above. But if you want to do it in a specific chunk, you can use:
-
-```{python}
-#| messages: false
-#| warnings: false
-```
-
-## Loading Data and Models
-
-If your project relies on heavy computations (either for the data prep or modeling), you'll probably want to show your work in a code chunk that does not evaluate. 
-
-```{python}
-#| eval: false
-#| echo: true
-
-'''
-Imagine that this is a long code block that reads data
-and then starts your wrangling tasks. If it takes 
-over a minute to run, you'll probably want to have
-that work saved in a script and write your data out
-to a file.
-'''
-
-```
-
-You can quietly load in your prepped data in another chunk.
-
-```{python}
-#| echo: false
 import pandas as pd
-#data = pd.read_csv('path/to/your/prepped_data.csv')
+import numpy as np
+from itertools import combinations
+from scipy.stats import zscore
+import statsmodels.api as sm
 ```
-
-The same holds true for models, especially if you're fitting complex models that take 
-
-## Rendering Outputs
-
-When I render this document, the output will be ready to appear as the `readme` on my GitHub repository. Let's see how that might look with some plots and tables.
-
-Notice below that I'm not going to print my code, I just want it to run.
-```{python}
-#| echo: false
-#| messages: false
-#| warnings: false
-
-import matplotlib.pyplot as plt
-import numpy as np 
-import pandas as pd
-import seaborn as sns
-```
-
-Let's see what a simple plot looks like.
 
 ```{python}
-#| messages: false
-#| warnings: false
+FILE_PATH = "2014-24 Final Data.xlsx"
+df = pd.read_excel(FILE_PATH)
 
-data = {
-    'x': np.linspace(0, 10, 100),
-    'y': np.sin(np.linspace(0, 10, 100))
-}
-
-df = pd.DataFrame(data)
-
-sns.lineplot(data=df, x='x', y='y')
-plt.title('Sine Wave')
-plt.xlabel('X-axis')
-plt.ylabel('Y-axis')
-plt.show()
+print("Loaded dataset:", df.shape)
+df.head()
 ```
 
-This is where I am going to offer some explanations about the sine wave above. 
+---
+## 2. Feature Engineering (Stress-Oriented Variables)
 
-Now let's see what a table looks like.
+We transformed raw fields so that “higher = more stress” and created additional indicators needed for the index.
 
 ```{python}
-#| echo: true
-#| messages: false
-#| warnings: false
-#| results: 'markdown'
-data_table = {
-    'A': [1, 2, 3, 4, 5],
-    'B': ['a', 'b', 'c', 'd', 'e'],
-    'C': [10.5, 20.3, 30.2, 40.1, 50.0]
-}
-df_table = pd.DataFrame(data_table)
-df_table.head().to_markdown()
+# Stronger opponent (lower rank) => more stress
+df["opp_rank_stress"] = -df["Opponent_Rank"]
+
+# Ignored unusually long gaps (> 50 days) for rest stress
+df["days_stress"] = df["days_since_last_game"].where(df["days_since_last_game"] <= 50, np.nan)
+
+# Back-to-back indicator
+df["back_to_back"] = (df["days_since_last_game"] == 1).astype(int)
 ```
 
-Notice the use of `to_markdown()` to render the table nicely in GitHub's markdown format. It is a small thing that will make a big in difference in how your document looks!
+---
+## 3. Build Primary Stress Matrix
 
-Now, let's see what some linear model output looks like.
+We isolated the core variables that represent travel/schedule stress and store them in a single table.
 
 ```{python}
-#| echo: true
-#| messages: false
-#| warnings: false
-import statsmodels.api as sm    
-X = df[['x']]
-y = df['y']
-X = sm.add_constant(X) 
-model = sm.OLS(y, X).fit()
-summary_table = model.summary().tables[1] 
-print(summary_table)
+primary_vars = [
+    "travel_minutes",
+    "opp_rank_stress",
+    "days_stress",
+    "road_score",
+    "timezone_change",
+    "back_to_back"
+]
+
+stress_df = df[primary_vars].copy()
+stress_df.head()
 ```
 
-Notice how I indexed into the summary table object to just get the coefficients table?
+---
 
-You migth want to talk about your coefficients and there are two ways that you can do that:
+## 4. Standardize Continuous Inputs
 
-1. Manually type out your interpretations below the table.
-2. Use code to extract the coefficients and generate text automatically.
-
-Option number 1, while more straightforward, is not the choice. Option number 2 is more dynamic and reproducible, especially if you plan to update your model or data in the future.
+Continuous variables use different units (minutes, days, etc.). Z-scoring makes them comparable so no single metric dominates due to scale.
 
 ```{python}
-#| echo: true
-#| messages: false
-#| warnings: false
-params = model.params
-intercept = params['const']
-slope = params['x'] 
+continuous_vars = ["travel_minutes", "opp_rank_stress", "days_stress", "timezone_change"]
+
+for col in continuous_vars:
+    stress_df[col] = zscore(stress_df[col].fillna(stress_df[col].mean()))
+
+stress_df.head()
 ```
 
-Now that those are out, I can use inline chunks to reference them in my text. You can think of inline chunks a lot like f-strings.
+---
 
-The intercept of the model is `{python} str(intercept.round(3))` and the slope is `{python} str(slope.round(3))`. No matter what I do with my data or model, these values will always be up to date in my text!
+## 5. Create and Standardize Interaction Terms
 
-I can also pull out model fit statistics like *R*-squared. The *R*-squared for this model is `{python} str(model.rsquared.round(3))`.
+Interaction terms model “compound stress” (e.g., long travel combined with timezone changes). We create pairwise interactions and z-score them.
 
-You have the full power of markdown and Python at your disposal. I just want to show you some handy markdown things that you might want to use. 
+```{python}
+vars_for_interactions = [
+    "travel_minutes",
+    "opp_rank_stress",
+    "days_stress",
+    "road_score",
+    "timezone_change"
+]
 
-I can create **bold** text or *italicized* text.
+interaction_terms = {}
+for A, B in combinations(vars_for_interactions, 2):
+    interaction_terms[f"{A}_x_{B}"] = stress_df[A] * stress_df[B]
 
-Functions and variables can be represented in `monospace`. Note that those are backticks, not apostrophes.
+interaction_df = pd.DataFrame(interaction_terms)
 
-You can create bullet point lists:
+for col in interaction_df.columns:
+    interaction_df[col] = zscore(interaction_df[col].fillna(interaction_df[col].mean()))
 
-- Item 1
-- Item 2
-  - Subitem 2a
-  - Subitem 2b
+print("Number of interaction terms:", interaction_df.shape[1])
+interaction_df.head()
+```
 
-You might want to include links within your document. You can use html links like this: <a href="https://www.example.com">Example</a> or markdown links like this: [Example](https://www.example.com).
+---
+
+## 6. Compute Unweighted TSS (Baseline)
+
+The baseline score treats each standardized component as equally important. This provides a transparent benchmark before learning weights.
+
+```{python}
+df["travel_stress_score"] = stress_df.sum(axis=1) + interaction_df.sum(axis=1)
+
+df[["game_id", "season", "travel_stress_score"]].head()
+```
+
+---
+
+## 7. Compute Weighted TSS\* (Primary Weights from Regression)
+
+We calculated the data-derived weights for primary stress factors by regressing scoring margin on the standardized predictors. We converted absolute standardized coefficients into normalized weights.
+
+```{python}
+reg_y = pd.to_numeric(df["margin"], errors="coerce")
+
+reg_X = stress_df.copy()
+for col in reg_X.columns:
+    reg_X[col] = zscore(reg_X[col].fillna(reg_X[col].mean()))
+
+reg_data = pd.concat([reg_X, reg_y], axis=1).dropna()
+X_primary = sm.add_constant(reg_data[reg_X.columns])
+y_primary = reg_data["margin"]
+
+primary_model = sm.OLS(y_primary, X_primary).fit()
+print(primary_model.summary())
+
+primary_coefs = primary_model.params.drop("const")
+primary_weights = primary_coefs.abs() / primary_coefs.abs().sum()
+
+print("\nPrimary (regression-derived) weights:")
+print(primary_weights)
+
+df["weighted_TSS_primary"] = (reg_X[primary_weights.index] * primary_weights).sum(axis=1)
+df[["game_id", "season", "weighted_TSS_primary"]].head()
+```
+
+---
+
+## 8. Compute Weighted Interaction Contribution (Method 1)
+
+Instead of manually assigning interaction weights, we estimated a regression including both primary and interaction terms, then derive weights from the interaction coefficients.
+
+```{python}
+full_X = pd.concat([reg_X, interaction_df], axis=1)
+full_data = pd.concat([full_X, reg_y], axis=1).dropna()
+
+X_full = sm.add_constant(full_data[full_X.columns])
+y_full = full_data["margin"]
+
+interaction_model = sm.OLS(y_full, X_full).fit()
+print(interaction_model.summary())
+
+interaction_coefs = interaction_model.params.drop("const")[interaction_df.columns]
+interaction_weights = interaction_coefs.abs() / interaction_coefs.abs().sum()
+
+print("\nTop interaction weights (data-derived):")
+print(interaction_weights.sort_values(ascending=False).head(15))
+
+weighted_interactions = (interaction_df * interaction_weights).sum(axis=1)
+df["weighted_TSS_full"] = df["weighted_TSS_primary"] + weighted_interactions
+
+df[["game_id", "season", "margin", "travel_stress_score", "weighted_TSS_full"]].head()
+```
+
+---
+
+## 9. Export Outputs
+
+We exported a single dataset containing both baseline and weighted scores for reporting and downstream analysis.
+
+```{python}
+OUTPUT_XLSX = "2014-24_Final_Data_with_TSS_Unweighted_and_Weighted.xlsx"
+df.to_excel(OUTPUT_XLSX, index=False)
+print("Saved:", OUTPUT_XLSX)
+```
+
+---
