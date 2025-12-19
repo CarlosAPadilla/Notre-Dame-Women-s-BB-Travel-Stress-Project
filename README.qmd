@@ -1,10 +1,10 @@
 ---
 title: "University of Notre Dame WBB Travel Stress Metric"
 format: gfm
-execute: 
+execute:
   warning: false
   message: false
-  errors: false
+  error: false
 jupyter: python3
 ---
 
@@ -83,7 +83,7 @@ print("Loaded dataset:", df.shape)
 df.head()
 ```
 
----
+
 ## 2. Feature Engineering (Stress-Oriented Variables)
 
 We transformed raw fields so that “higher = more stress” and created additional indicators needed for the index.
@@ -99,7 +99,7 @@ df["days_stress"] = df["days_since_last_game"].where(df["days_since_last_game"] 
 df["back_to_back"] = (df["days_since_last_game"] == 1).astype(int)
 ```
 
----
+
 ## 3. Build Primary Stress Matrix
 
 We isolated the core variables that represent travel/schedule stress and store them in a single table.
@@ -118,7 +118,7 @@ stress_df = df[primary_vars].copy()
 stress_df.head()
 ```
 
----
+
 
 ## 4. Standardize Continuous Inputs
 
@@ -133,7 +133,7 @@ for col in continuous_vars:
 stress_df.head()
 ```
 
----
+
 
 ## 5. Create and Standardize Interaction Terms
 
@@ -161,7 +161,7 @@ print("Number of interaction terms:", interaction_df.shape[1])
 interaction_df.head()
 ```
 
----
+
 
 ## 6. Compute Unweighted TSS (Baseline)
 
@@ -173,7 +173,7 @@ df["travel_stress_score"] = stress_df.sum(axis=1) + interaction_df.sum(axis=1)
 df[["game_id", "season", "travel_stress_score"]].head()
 ```
 
----
+
 
 ## 7. Compute Weighted TSS\* (Primary Weights from Regression)
 
@@ -203,7 +203,7 @@ df["weighted_TSS_primary"] = (reg_X[primary_weights.index] * primary_weights).su
 df[["game_id", "season", "weighted_TSS_primary"]].head()
 ```
 
----
+
 
 ## 8. Compute Weighted Interaction Contribution (Method 1)
 
@@ -231,7 +231,7 @@ df["weighted_TSS_full"] = df["weighted_TSS_primary"] + weighted_interactions
 df[["game_id", "season", "margin", "travel_stress_score", "weighted_TSS_full"]].head()
 ```
 
----
+
 
 ## 9. Export Outputs
 
