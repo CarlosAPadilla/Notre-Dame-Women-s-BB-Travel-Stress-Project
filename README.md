@@ -1,5 +1,6 @@
-# University of Notre Dame WBB Travel Stress Metric
+> This README is rendered from `README.qmd` using Quarto for reproducibility.
 
+# University of Notre Dame WBB Travel Stress Metric
 
 ## Executive Summary
 
